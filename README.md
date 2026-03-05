@@ -9,6 +9,7 @@ The following is the the FastAPI directory structure:
 ```text
 └── 📁src
     └── 📁scripts
+        ├── inputs.py
         ├── responses.py
         ├── router.py
     ├── __main__.py
@@ -18,7 +19,7 @@ The following is the the FastAPI directory structure:
 └── requirements.txt
 ```
 
-The entrypoint into our application is `app.py`, which gathers our routes from `router.py` and input/output classes from `responses.py` and runs them all together using `uvicorn`, which is bundled with FastAPI. Our `__main__.py` calls `app.py`, which allows us to call main as a module within the `src` directory. This structure enables adding additional routers and routes easily in the future.
+The entrypoint into our application is `app.py`, which gathers our routes from `router.py` and input/output classes from `inputs.py` and `responses.py`. Then, they are all ran together using `uvicorn`, which is bundled with FastAPI. Our `__main__.py` calls `app.py`, which allows us to call main as a module within the `src` directory. This structure enables adding additional routers and routes easily in the future.
 
 ## Local Development
 
@@ -40,4 +41,4 @@ To run the application locally, you can simply input `python -m src` in your roo
 }
 ```
 
-You can then view the live application's `Swagger UI` through [http://localhost:8080/docs](http://localhost:8080/docs) by default.
+You can then view the live application's `Swagger UI` through [http://localhost:8080/order-processing/docs](http://localhost:8080/order-processing/docs) by default.
