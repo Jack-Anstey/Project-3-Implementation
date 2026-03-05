@@ -7,6 +7,9 @@ This is the UW CSE P 590: Cloud Applications Project 3 MVP deployment example
 The following is the the FastAPI directory structure:
 
 ```text
+└── 📁docker
+    ├── .dockerignore
+    ├── Dockerfile
 └── 📁src
     └── 📁scripts
         ├── inputs.py
@@ -20,6 +23,8 @@ The following is the the FastAPI directory structure:
 ```
 
 The entrypoint into our application is `app.py`, which gathers our routes from `router.py` and input/output classes from `inputs.py` and `responses.py`. Then, they are all ran together using `uvicorn`, which is bundled with FastAPI. Our `__main__.py` calls `app.py`, which allows us to call main as a module within the `src` directory. This structure enables adding additional routers and routes easily in the future.
+
+The `docker` directory then hosts all of our files needed for containerization, which enables us to specific in our dependency handling before pushing to AWS Lambda (serverless).
 
 ## Local Development
 
