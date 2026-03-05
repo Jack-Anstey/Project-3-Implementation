@@ -1,0 +1,12 @@
+# Project Specific
+venv/
+.venv/
+
+# Python
+__pycache__/
+
+# VS Code
+.vscode/
+
+# MacOS
+.DS_STORE
