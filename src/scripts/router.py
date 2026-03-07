@@ -7,11 +7,11 @@ from src.scripts.responses import *
 from src.scripts.inputs import *
 
 # Define the router that we will use
-router = APIRouter(tags=["Project 3 Example"])
+ROUTER = APIRouter(tags=["Project 3 Example"])
 
 
 # Define get and post requests
-@router.get("/")
+@ROUTER.get("/")
 async def root_status(request: Request) -> BasicResponse:
     """Get the status of the FastAPI application
 
@@ -25,7 +25,7 @@ async def root_status(request: Request) -> BasicResponse:
     return BasicResponse(response="Hello World!")
 
 
-@router.post("/order-intake")
+@ROUTER.post("/order-intake")
 async def take_order(request: Request, orders: list[Order]) -> BasicResponse:
     """Take in an order to submit it to our database
 
