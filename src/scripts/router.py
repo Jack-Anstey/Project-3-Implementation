@@ -27,7 +27,7 @@ async def root_status(request: Request) -> BasicResponse:
 
 @router.post("/order-intake")
 async def take_order(request: Request, orders: list[Order]) -> BasicResponse:
-    """Get the
+    """Take in an order to submit it to our database
 
     Args:
         request (Request): The HTTP request
