@@ -1,0 +1,126 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: p03-postgres
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: orders
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+  localstack:
+    image: localstack/localstack:3.7.2
+    container_name: p03-localstack
+    ports:
+      - "${LOCALSTACK_HOST_PORT:-4566}:4566"
+    environment:
+      AWS_DEFAULT_REGION: us-east-1
+      SERVICES: sns,sqs,eventbridge
+      DEBUG: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  order-api:
+    build:
+      context: ./services/order-api
+    container_name: p03-order-api
+    ports:
+      - "8000:8000"
+    environment:
+      SERVICE_NAME: order-api
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      TOPIC_NAME: orders-topic
+      DATABASE_URL: postgresql://app:app@postgres:5432/orders
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  inventory-worker:
+    build:
+      context: ./services/inventory-worker
+    container_name: p03-inventory-worker
+    environment:
+      SERVICE_NAME: inventory-worker
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      ORDER_QUEUE_NAME: order-created-queue
+      TOPIC_NAME: orders-topic
+      DATABASE_URL: postgresql://app:app@postgres:5432/orders
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  notification-worker:
+    build:
+      context: ./services/notification-worker
+    container_name: p03-notification-worker
+    environment:
+      SERVICE_NAME: notification-worker
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      NOTIFICATION_QUEUE_NAME: notification-queue
+      DATABASE_URL: postgresql://app:app@postgres:5432/orders
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  order-status-worker:
+    build:
+      context: ./services/order-status-worker
+    container_name: p03-order-status-worker
+    environment:
+      SERVICE_NAME: order-status-worker
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      DECISION_QUEUE_NAME: order-decision-queue
+      DATABASE_URL: postgresql://app:app@postgres:5432/orders
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  analytics-worker:
+    build:
+      context: ./services/analytics-worker
+    container_name: p03-analytics-worker
+    environment:
+      SERVICE_NAME: analytics-worker
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      ANALYTICS_QUEUE_NAME: analytics-queue
+      DATABASE_URL: postgresql://app:app@postgres:5432/orders
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+volumes:
+  postgres_data:
