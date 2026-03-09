@@ -15,3 +15,11 @@ class Order(BaseModel):
     object: str
     sku: str
     quantity: int = 1
+
+    def __str__(self) -> str:
+        """To str Override method
+
+        Returns:
+            str: The str representation of the pydantic `Order` class
+        """
+        return f"Object: {self.object}, SKU: {self.sku}, Quantity: {self.quantity}"

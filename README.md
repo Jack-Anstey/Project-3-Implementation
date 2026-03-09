@@ -44,7 +44,7 @@ To run the application locally, you can simply input `python -m src` in your roo
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run src module",
+      "name": "Run API",
       "type": "debugpy",
       "request": "launch",
       "module": "src",

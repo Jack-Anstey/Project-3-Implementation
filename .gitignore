@@ -1,6 +1,7 @@
 # Project Specific
 venv/
 .venv/
+logs/
 
 # Python
 __pycache__/

@@ -5,6 +5,11 @@ from fastapi.requests import Request
 # Local Imports
 from src.scripts.responses import *
 from src.scripts.inputs import *
+from src.utils.custom_logger import get_logger
+
+# Create the global logger
+logger = get_logger(name=__name__, file_name="orders.log")
+
 
 # Define the router that we will use
 ROUTER = APIRouter(tags=["Project 3 Example"])
@@ -22,6 +27,7 @@ async def root_status(request: Request) -> BasicResponse:
         BasicResponse: A basic response of Hello World!
     """
 
+    logger.info("Logging works for the root endpoint")
     return BasicResponse(response="Hello World!")
 
 
@@ -38,4 +44,10 @@ async def take_order(request: Request, orders: list[Order]) -> BasicResponse:
     """
 
     # TODO order is sent to our Redis cached database
+
+    # Log the user's order
+    logger.info(f"The user's order:")
+    [logger.info(f"\t{order}") for order in orders]
+
+    # Return that it was successful
     return BasicResponse(response="Order was successful")
