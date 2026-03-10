@@ -16,7 +16,7 @@ ROUTER = APIRouter(tags=["Project 3 Example"])
 
 
 # Define get and post requests
-@ROUTER.get("/")
+@ROUTER.get("/health")
 async def root_status(request: Request) -> BasicResponse:
     """Get the status of the FastAPI application
 
@@ -28,7 +28,7 @@ async def root_status(request: Request) -> BasicResponse:
     """
 
     logger.info("Logging works for the root endpoint")
-    return BasicResponse(response="Hello World!")
+    return BasicResponse(response="Healthy!")
 
 
 @ROUTER.post("/order-intake")
