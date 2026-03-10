@@ -1,6 +1,6 @@
 # Project 3: API Example
 
-This is the UW CSE P 590: Cloud Applications Project 3 MVP deployment example for Group 5.
+This is the UW CSE P 590: Cloud Applications Project 3 MVP deployment example for Team 5.
 
 ## Project Members
 
