@@ -1,15 +1,89 @@
 # Third Party imports
+import json
+import os
 import random
+import time
 import uuid
-from locust import HttpUser, LoadTestShape, task, between
+
+from locust import HttpUser, LoadTestShape, constant_throughput, events, task
 
 # Local Imports
 from src.scripts.inputs import Order
 
 
-# Generated with some help from Claude
-class APIUser(HttpUser):
-    wait_time = between(0, 0.5)  # seconds between requests
+# ── RPS-targeted load shape ──────────────────────────────────────────────────
+STAGES = [
+    {"target_rps": 50, "duration": 60, "ramp": 10},
+    {"target_rps": 100, "duration": 60, "ramp": 10},
+    {"target_rps": 150, "duration": 60, "ramp": 10},
+    {"target_rps": 200, "duration": 60, "ramp": 10},
+]
+
+
+class RPSLoadShape(LoadTestShape):
+    """Discrete-tier load shape that targets specific RPS levels.
+
+    Each user fires ~1 req/s via constant_throughput(1), so user count ≈ target RPS.
+    """
+
+    def tick(self):
+        run_time = self.get_run_time()
+        elapsed = 0
+        for stage in STAGES:
+            stage_end = elapsed + stage["ramp"] + stage["duration"]
+            if run_time < stage_end:
+                return stage["target_rps"], stage["target_rps"] // 2 or 1
+            elapsed = stage_end
+        return None
+
+
+# ── Raw request collector ────────────────────────────────────────────────────
+_raw_requests: list[dict] = []
+
+
+@events.init.add_listener
+def on_init(environment, **kwargs):
+    """Create the output directory derived from --csv path."""
+    csv_prefix = environment.parsed_options.csv_prefix if hasattr(environment.parsed_options, "csv_prefix") else None
+    if csv_prefix:
+        out_dir = os.path.dirname(csv_prefix)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
+
+@events.request.add_listener
+def on_request(request_type, name, response_time, response_length, response, exception, context, **kwargs):
+    """Capture every request for per-tier analysis."""
+    status = 0
+    if response is not None:
+        status = response.status_code
+    _raw_requests.append({
+        "timestamp": time.time(),
+        "method": request_type,
+        "name": name,
+        "response_time": response_time,
+        "status_code": status,
+        "response_length": response_length or 0,
+    })
+
+
+@events.test_stop.add_listener
+def on_test_stop(environment, **kwargs):
+    """Dump raw requests to JSON alongside the CSVs."""
+    csv_prefix = environment.parsed_options.csv_prefix if hasattr(environment.parsed_options, "csv_prefix") else None
+    if csv_prefix:
+        out_dir = os.path.dirname(csv_prefix)
+        out_path = os.path.join(out_dir, "raw_requests.json") if out_dir else "raw_requests.json"
+    else:
+        out_path = "raw_requests.json"
+    with open(out_path, "w") as f:
+        json.dump(_raw_requests, f)
+    print(f"[load_test_suite] Wrote {len(_raw_requests)} raw requests to {out_path}")
+
+
+# ── Locust user (same tasks + weights as synthetic_load.py:APIUser) ──────────
+class RPSUser(HttpUser):
+    wait_time = constant_throughput(1)  # ~1 req/s per user
 
     @task(1)
     def get_api_status(self):
@@ -21,15 +95,11 @@ class APIUser(HttpUser):
 
     @task(10)
     def create_item(self):
-
-        # Define some random set of Orders
         items = [
             Order(object="Synthetic Load", sku="ABC123", quantity=10),
             Order(object="Synthetic Load 1", sku="12345", quantity=1),
             Order(object="Synthetic Load 2", sku="XYZ", quantity=100),
         ]
-
-        # Post it and accept 200, 207, or 409 as valid responses
         with self.client.post(
             url="/order-intake",
             json=[item.model_dump() for item in items],
@@ -42,7 +112,6 @@ class APIUser(HttpUser):
 
     @task(2)
     def confirm_order_flow(self):
-        """Place an order then confirm the reservation"""
         items = [Order(object="Confirm Test", sku="ABC123", quantity=1).model_dump()]
         with self.client.post(
             url="/order-intake", json=items, catch_response=True
@@ -51,7 +120,6 @@ class APIUser(HttpUser):
                 resp.failure(f"Unexpected status code: {resp.status_code}")
                 return
             resp.success()
-
         rid = resp.json().get("reservation_id")
         if rid:
             with self.client.post(
@@ -66,7 +134,6 @@ class APIUser(HttpUser):
 
     @task(1)
     def release_order_flow(self):
-        """Place an order then release the reservation"""
         items = [Order(object="Release Test", sku="DEF456", quantity=1).model_dump()]
         with self.client.post(
             url="/order-intake", json=items, catch_response=True
@@ -75,7 +142,6 @@ class APIUser(HttpUser):
                 resp.failure(f"Unexpected status code: {resp.status_code}")
                 return
             resp.success()
-
         rid = resp.json().get("reservation_id")
         if rid:
             with self.client.post(
@@ -90,7 +156,6 @@ class APIUser(HttpUser):
 
     @task(1)
     def restock_flow(self):
-        """Periodically restock to prevent full drain"""
         sku = random.choice(["ABC123", "DEF456", "GHI789", "12345", "XYZ"])
         with self.client.post(
             url="/inventory/restock",
@@ -104,13 +169,11 @@ class APIUser(HttpUser):
 
     @task(2)
     def check_single_sku(self):
-        """Look up stock for a single SKU"""
         sku = random.choice(["ABC123", "DEF456", "GHI789", "12345", "XYZ"])
         self.client.get(f"/inventory/{sku}")
 
     @task(2)
     def send_order_notification(self):
-        """Send an order confirmation notification"""
         channel = random.choice(["email", "sms"])
         with self.client.post(
             url="/notify/order-confirmation",
@@ -129,17 +192,14 @@ class APIUser(HttpUser):
 
     @task(2)
     def check_analytics_summary(self):
-        """Check the analytics summary endpoint"""
         self.client.get("/analytics/summary")
 
     @task(1)
     def check_top_skus(self):
-        """Check the top SKUs analytics endpoint"""
         self.client.get("/analytics/top-skus?limit=5")
 
     @task(1)
     def send_shipping_notification(self):
-        """Send a shipping confirmation notification"""
         channel = random.choice(["email", "sms"])
         with self.client.post(
             url="/notify/shipping-confirmation",
@@ -158,12 +218,10 @@ class APIUser(HttpUser):
 
     @task(1)
     def check_retry_queue(self):
-        """Check pending retry queue tasks"""
         self.client.get("/retry-queue/pending")
 
     @task(2)
     def idempotent_order(self):
-        """Place an order with idempotency key, then replay it"""
         key = str(uuid.uuid4())
         items = [Order(object="Idempotent Test", sku="ABC123", quantity=1).model_dump()]
         headers = {"Idempotency-Key": key}
@@ -174,7 +232,6 @@ class APIUser(HttpUser):
                 resp.success()
             else:
                 resp.failure(f"Unexpected status code: {resp.status_code}")
-        # Replay with same key
         with self.client.post(
             url="/order-intake",
             json=items,
@@ -186,21 +243,3 @@ class APIUser(HttpUser):
                 resp.success()
             else:
                 resp.failure(f"Unexpected status code: {resp.status_code}")
-
-
-class SpikeLoadShape(LoadTestShape):
-    """Custom load shape that simulates a traffic spike"""
-
-    stages = [
-        {"duration": 10, "users": 10, "spawn_rate": 5},
-        {"duration": 20, "users": 200, "spawn_rate": 50},
-        {"duration": 50, "users": 200, "spawn_rate": 50},
-        {"duration": 60, "users": 10, "spawn_rate": 50},
-    ]
-
-    def tick(self):
-        run_time = self.get_run_time()
-        for stage in self.stages:
-            if run_time < stage["duration"]:
-                return stage["users"], stage["spawn_rate"]
-        return None
