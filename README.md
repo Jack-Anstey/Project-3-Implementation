@@ -1,6 +1,7 @@
-# Project 3: API Example
+# Project 3: Order Service Example
 
 This is the UW CSE P 590: Cloud Applications Project 3 MVP deployment example for Team 5.
+In particular, it is a small scale representation of the "Order Service" Lambda service as seen in our architecture diagram.
 
 ## Project Members
 
