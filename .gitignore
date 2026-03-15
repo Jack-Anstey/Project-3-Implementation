@@ -6,6 +6,10 @@ logs/
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Generated output
+reports/
 
 # VS Code
 .vscode/

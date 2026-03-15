@@ -1,5 +1,6 @@
 fastapi[standard]==0.135.1
 locust==2.43.3
+openpyxl==3.1.5
 pytest==8.3.5
 pytest-asyncio==0.25.3
 requests==2.32.3

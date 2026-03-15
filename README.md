@@ -439,7 +439,13 @@ Key modules by responsibility:
 
 ## Testing
 
-**Unit tests** — 8 test modules covering inventory, event bus, saga, notifications, analytics, idempotency, retry queue, and middleware. All test dependencies (`pytest`, `pytest-asyncio`) are included in `requirements.txt`. Tests must be run from the repository root directory:
+**Unit tests** — 8 test modules covering inventory, event bus, saga, notifications, analytics, idempotency, retry queue, and middleware. All test dependencies (`pytest`, `pytest-asyncio`, `openpyxl`) are included in `requirements.txt`. Tests must be run from the repository root directory:
+
+```bash
+pytest tests/ -v
+```
+
+If tests fail with `ModuleNotFoundError`, set your `PYTHONPATH` to the repository root:
 
 ```bash
 # Unix / Mac
@@ -449,13 +455,34 @@ PYTHONPATH=. pytest tests/ -v
 set PYTHONPATH=. && pytest tests/ -v
 ```
 
-**Load testing** — Locust-based synthetic load with orchestration and reporting scripts (`run_load_test.py`, `load_test_suite.py`, `generate_report.py`, `generate_spreadsheet.py`):
+**Load testing** — Run the full load test suite with a single command:
 
 ```bash
-locust -f tests/synthetic_load.py --host=http://localhost:8080/order-processing --users 50 --spawn-rate 5 --run-time 60s --headless
+python tests/run_load_test.py --host http://localhost:8080/order-processing
 ```
 
-You can adjust the number of users, spawn rate, and run time to test other scenarios to see if our asynchronous endpoints can handle them.
+This orchestrator runs all of the following scripts in sequence:
+
+- **`load_test_suite.py`** — Locust-based synthetic load that ramps through multiple RPS tiers against the API
+- **`generate_report.py`** — Parses Locust CSV output and raw request data into an HTML report and JSON summary
+- **`generate_spreadsheet.py`** — Builds an Excel spreadsheet with charts from the test results
+
+Results are saved to a timestamped folder in `reports/` (e.g. `reports/load_test_20260315_140000/`). Open `report.html` in your browser to view the compiled results.
+
+You can adjust the run time with `--run-time` (default: `280s` for 4 RPS tiers).
+
+You can also run each script individually if you only need part of the flow:
+
+```bash
+# Run just the Locust load test
+locust -f tests/load_test_suite.py --host http://localhost:8080/order-processing --headless --run-time 60s --csv reports/stats
+
+# Generate the HTML report from existing Locust output
+python tests/generate_report.py --csv-dir reports/ --host http://localhost:8080/order-processing --output-dir reports/
+
+# Generate the Excel spreadsheet from existing report data
+python tests/generate_spreadsheet.py --summary reports/summary.json --locust-csv reports/stats_stats.csv --output reports/results.xlsx
+```
 
 ## Infrastructure as Code (IAC)
 
