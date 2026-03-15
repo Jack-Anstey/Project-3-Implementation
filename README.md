@@ -455,7 +455,7 @@ PYTHONPATH=. pytest tests/ -v
 set PYTHONPATH=. && pytest tests/ -v
 ```
 
-**Load testing** — Run the full load test suite with a single command:
+**Load testing** — The FastAPI server must be running before starting load tests. Start it first (see [Quickstart](#quickstart)), then run the full load test suite with a single command:
 
 ```bash
 python tests/run_load_test.py --host http://localhost:8080/order-processing
