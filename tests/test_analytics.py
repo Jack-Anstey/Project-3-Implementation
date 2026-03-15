@@ -87,11 +87,11 @@ async def test_record_order_status_mapping(tracker):
 @pytest.mark.asyncio
 async def test_summary_empty(tracker):
     summary = await tracker.get_summary()
-    assert summary["total_orders"] == 0
-    assert summary["accepted"] == 0
-    assert summary["partial"] == 0
-    assert summary["rejected"] == 0
-    assert summary["acceptance_rate"] == 0.0
+    assert summary.total_orders == 0
+    assert summary.accepted == 0
+    assert summary.partial == 0
+    assert summary.rejected == 0
+    assert summary.acceptance_rate == 0.0
 
 
 @pytest.mark.asyncio
@@ -117,10 +117,10 @@ async def test_summary_counts(tracker):
     )
 
     summary = await tracker.get_summary()
-    assert summary["total_orders"] == 3
-    assert summary["accepted"] == 1
-    assert summary["partial"] == 1
-    assert summary["rejected"] == 1
+    assert summary.total_orders == 3
+    assert summary.accepted == 1
+    assert summary.partial == 1
+    assert summary.rejected == 1
 
 
 @pytest.mark.asyncio
@@ -140,7 +140,7 @@ async def test_summary_acceptance_rate(tracker):
     )
 
     summary = await tracker.get_summary()
-    assert abs(summary["acceptance_rate"] - 0.6667) < 0.001
+    assert abs(summary.acceptance_rate - 0.6667) < 0.001
 
 
 @pytest.mark.asyncio
@@ -156,9 +156,9 @@ async def test_top_skus_ranking(tracker):
     )
 
     top = await tracker.get_top_skus(10)
-    assert top[0]["sku"] == "ABC123"
-    assert top[0]["total_requested"] == 100
-    assert top[1]["sku"] == "DEF456"
+    assert top[0].sku == "ABC123"
+    assert top[0].total_requested == 100
+    assert top[1].sku == "DEF456"
 
 
 @pytest.mark.asyncio
@@ -190,7 +190,7 @@ async def test_hourly_trend_buckets(tracker):
 
     trend = await tracker.get_hourly_trend(1)
     assert len(trend) >= 1
-    total_count = sum(b["order_count"] for b in trend)
+    total_count = sum(b.order_count for b in trend)
     assert total_count == 2
 
 
@@ -213,7 +213,7 @@ async def test_hourly_trend_cutoff(tracker):
     )
 
     trend = await tracker.get_hourly_trend(24)
-    total_count = sum(b["order_count"] for b in trend)
+    total_count = sum(b.order_count for b in trend)
     assert total_count == 1  # Only the recent one
 
 

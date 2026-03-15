@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone, timedelta
 
 # Local Imports
+from src.scripts.responses import RetryTaskResponse
 from src.utils.custom_logger import get_logger
 
 # Create the global logger
@@ -23,11 +24,11 @@ class RetryQueue(ABC):
         """Add a task to the retry queue. Returns task_id."""
 
     @abstractmethod
-    async def get_pending(self) -> list[dict]:
+    async def get_pending(self) -> list[RetryTaskResponse]:
         """Return all pending retry tasks"""
 
     @abstractmethod
-    async def get_dead_letters(self) -> list[dict]:
+    async def get_dead_letters(self) -> list[RetryTaskResponse]:
         """Return all permanently failed tasks"""
 
     @abstractmethod
@@ -77,16 +78,35 @@ class InMemoryRetryQueue(RetryQueue):
         logger.info(f"Enqueued task {task_id} for handler '{callable_name}'")
         return task_id
 
-    async def get_pending(self) -> list[dict]:
+    async def get_pending(self) -> list[RetryTaskResponse]:
         async with self._lock:
             return [
-                {k: v for k, v in task.items() if k not in ("args", "kwargs")}
+                RetryTaskResponse(
+                    task_id=task["task_id"],
+                    callable_name=task["callable_name"],
+                    attempts=task["attempts"],
+                    max_retries=task["max_retries"],
+                    next_retry_at=task["next_retry_at"],
+                    created_at=task["created_at"],
+                    last_error=task["last_error"],
+                )
                 for task in self._pending
             ]
 
-    async def get_dead_letters(self) -> list[dict]:
+    async def get_dead_letters(self) -> list[RetryTaskResponse]:
         async with self._lock:
-            return list(self._dead_letters)
+            return [
+                RetryTaskResponse(
+                    task_id=task["task_id"],
+                    callable_name=task["callable_name"],
+                    attempts=task["attempts"],
+                    max_retries=task["max_retries"],
+                    next_retry_at=task.get("next_retry_at"),
+                    created_at=task["created_at"],
+                    last_error=task["last_error"],
+                )
+                for task in self._dead_letters
+            ]
 
     async def process_pending(self) -> int:
         now = datetime.now(timezone.utc)

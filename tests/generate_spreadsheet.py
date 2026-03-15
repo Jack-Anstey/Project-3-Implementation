@@ -128,7 +128,6 @@ def build_executive_summary(wb, tiers):
     cats = Reference(ws, min_col=1, min_row=2, max_row=len(tiers) + 1)
     chart.add_data(data_ref, titles_from_data=True)
     chart.set_categories(cats)
-    chart.shape = 4
     chart.width = 18
     chart.height = 12
     ws.add_chart(chart, f"A{len(tiers) + 4}")
@@ -296,7 +295,6 @@ def build_cost_projections(wb, cost_projections):
         ws.cell(row=i + 2, column=label_col, value=label)
     cats = Reference(ws, min_col=label_col, min_row=2, max_row=len(cost_projections) + 1)
     chart.set_categories(cats)
-    chart.shape = 4
     chart.width = 24
     chart.height = 14
     ws.add_chart(chart, f"A{len(cost_projections) + 4}")

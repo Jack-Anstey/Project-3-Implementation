@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 # Local Imports
+from src.scripts.responses import SagaTransitionEntry
 from src.utils.custom_logger import get_logger
 
 # Create the global logger
@@ -119,11 +120,11 @@ class InMemorySagaTracker(SagaTracker):
             "created_at": now,
             "updated_at": now,
             "history": [
-                {
-                    "status": OrderSagaStatus.RECEIVED.value,
-                    "timestamp": now,
-                    "metadata": None,
-                }
+                SagaTransitionEntry(
+                    status=OrderSagaStatus.RECEIVED.value,
+                    timestamp=now,
+                    metadata=None,
+                )
             ],
         }
         async with self._lock:
@@ -167,11 +168,11 @@ class InMemorySagaTracker(SagaTracker):
             saga["status"] = new_status.value
             saga["updated_at"] = now
             saga["history"].append(
-                {
-                    "status": new_status.value,
-                    "timestamp": now,
-                    "metadata": metadata,
-                }
+                SagaTransitionEntry(
+                    status=new_status.value,
+                    timestamp=now,
+                    metadata=metadata,
+                )
             )
 
         logger.info(

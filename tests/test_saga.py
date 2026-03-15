@@ -30,7 +30,7 @@ async def test_start_saga_creates_entry(tracker):
     assert saga["status"] == "RECEIVED"
     assert saga["idempotency_key"] == "key-1"
     assert len(saga["history"]) == 1
-    assert saga["history"][0]["status"] == "RECEIVED"
+    assert saga["history"][0].status == "RECEIVED"
     assert len(saga["orders"]) == 1
     assert saga["orders"][0]["sku"] == "ABC123"
 
@@ -43,7 +43,7 @@ async def test_transition_updates_status(tracker):
     saga = await tracker.get_saga("res-2")
     assert saga["status"] == "RESERVED"
     assert len(saga["history"]) == 2
-    assert saga["history"][1]["status"] == "RESERVED"
+    assert saga["history"][1].status == "RESERVED"
 
 
 @pytest.mark.asyncio
@@ -102,7 +102,7 @@ async def test_full_happy_path(tracker):
     saga = await tracker.get_saga("happy")
     assert saga["status"] == "CONFIRMED"
     assert len(saga["history"]) == 4
-    statuses = [h["status"] for h in saga["history"]]
+    statuses = [h.status for h in saga["history"]]
     assert statuses == ["RECEIVED", "RESERVED", "NOTIFYING", "CONFIRMED"]
 
 
@@ -114,7 +114,7 @@ async def test_compensation_path(tracker):
     await tracker.transition("comp", OrderSagaStatus.COMPENSATION_COMPLETE)
     saga = await tracker.get_saga("comp")
     assert saga["status"] == "COMPENSATION_COMPLETE"
-    statuses = [h["status"] for h in saga["history"]]
+    statuses = [h.status for h in saga["history"]]
     assert statuses == ["RECEIVED", "RESERVED", "COMPENSATING", "COMPENSATION_COMPLETE"]
 
 
@@ -125,7 +125,7 @@ async def test_expired_path(tracker):
     await tracker.transition("exp", OrderSagaStatus.EXPIRED)
     saga = await tracker.get_saga("exp")
     assert saga["status"] == "EXPIRED"
-    statuses = [h["status"] for h in saga["history"]]
+    statuses = [h.status for h in saga["history"]]
     assert statuses == ["RECEIVED", "RESERVED", "EXPIRED"]
 
 

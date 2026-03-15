@@ -15,7 +15,7 @@ async def test_enqueue_stores_task(queue):
     task_id = await queue.enqueue("noop")
     pending = await queue.get_pending()
     assert len(pending) == 1
-    assert pending[0]["task_id"] == task_id
+    assert pending[0].task_id == task_id
 
 
 @pytest.mark.asyncio
@@ -43,8 +43,8 @@ async def test_process_pending_retry_on_failure(queue):
     await queue.process_pending()
     pending = await queue.get_pending()
     assert len(pending) == 1
-    assert pending[0]["attempts"] == 1
-    assert pending[0]["last_error"] == "boom"
+    assert pending[0].attempts == 1
+    assert pending[0].last_error == "boom"
 
 
 @pytest.mark.asyncio
@@ -67,7 +67,7 @@ async def test_dead_letter_after_max_retries(queue):
     assert len(await queue.get_pending()) == 0
     dead = await queue.get_dead_letters()
     assert len(dead) == 1
-    assert dead[0]["callable_name"] == "fail"
+    assert dead[0].callable_name == "fail"
 
 
 @pytest.mark.asyncio
@@ -80,7 +80,7 @@ async def test_exponential_backoff(queue):
     await queue.process_pending()
     pending = await queue.get_pending()
     assert len(pending) == 1
-    next_retry = datetime.fromisoformat(pending[0]["next_retry_at"])
+    next_retry = datetime.fromisoformat(pending[0].next_retry_at)
     assert next_retry > datetime.now(timezone.utc)
 
 
@@ -94,7 +94,7 @@ async def test_queue_cap_evicts_oldest():
     pending = await queue.get_pending()
     assert len(pending) == 3
     # Oldest two should be evicted
-    pending_ids = [t["task_id"] for t in pending]
+    pending_ids = [t.task_id for t in pending]
     assert ids[0] not in pending_ids
     assert ids[1] not in pending_ids
     assert ids[4] in pending_ids

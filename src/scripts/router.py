@@ -1,5 +1,5 @@
 # Third Party Imports
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Header, Query, Response
 from fastapi.requests import Request
 
 # Local Imports
@@ -24,41 +24,60 @@ ROUTER = APIRouter()
 
 
 # Define get and post requests
-@ROUTER.get("/health", tags=["Health"])
+@ROUTER.get(
+    "/health",
+    tags=["Health"],
+    summary="Application health check",
+    description="Returns a simple healthy response to confirm the API is running.",
+    response_description="Health status message",
+)
 async def root_status(request: Request) -> BasicResponse:
-    """Get the status of the FastAPI application
+    """Returns a simple healthy response to confirm the API is running.
 
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        BasicResponse: A basic response of Hello World!
+    Use this endpoint for liveness probes or uptime monitors.
     """
 
     logger.info("Logging works for the root endpoint")
     return BasicResponse(response="Healthy!")
 
 
-@ROUTER.post("/order-intake", tags=["Orders"])
+@ROUTER.post(
+    "/order-intake",
+    tags=["Orders"],
+    summary="Submit orders and reserve inventory",
+    description="Validates each item against live inventory, creates soft reservations for "
+    "available stock, and returns accepted/rejected results. Reservations expire after "
+    "3 seconds if not confirmed via `/inventory/confirm`.",
+    response_description="Order validation results with accepted/rejected items and a reservation ID",
+    responses={
+        207: {"description": "Partial fulfillment — some items reserved, others rejected"},
+        409: {"description": "All items rejected — insufficient stock or invalid SKUs"},
+    },
+)
 async def take_order(
     request: Request,
     orders: list[Order],
     response: Response,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        description="Optional key for duplicate request detection",
+    ),
 ) -> OrderResponse:
-    """Take in an order and validate against available inventory
+    """Validates each item against live inventory and creates soft reservations.
 
-    Args:
-        request (Request): The HTTP request
-        orders (list[Order]): A list of `Orders` that comprise a user's total order
-        response (Response): FastAPI response object for setting status code
+    **Tip:** Call `GET /inventory` first to check stock levels before submitting an order.
 
-    Returns:
-        OrderResponse: Validation results with accepted/rejected items and reservation info
+    - **200** — All items successfully reserved.
+    - **207** — Mixed result: some items reserved, others rejected (invalid SKU or insufficient stock).
+    - **409** — All items rejected.
+
+    Pass an `Idempotency-Key` header to safely retry without creating duplicate reservations.
+    Reservations expire after 3 seconds — call `POST /inventory/confirm` promptly.
     """
 
     # Idempotency check
-    idempotency_key = request.headers.get("Idempotency-Key")
-    if idempotency_key:
+    if idempotency_key is not None:
         cached = await IDEMPOTENCY_STORE.get(idempotency_key)
         if cached:
             response.status_code = cached["status_code"]
@@ -84,33 +103,43 @@ async def take_order(
     return order_response
 
 
-@ROUTER.get("/inventory", tags=["Diagnostics"])
+@ROUTER.get(
+    "/inventory",
+    tags=["Diagnostics"],
+    summary="Get current stock levels for all SKUs",
+    description="Returns a map of every known SKU to its current available quantity. "
+    "Useful for checking stock before submitting orders.",
+    response_description="Map of SKU to available quantity",
+)
 async def get_inventory(request: Request) -> dict[str, int]:
-    """Get current stock levels (diagnostic endpoint)
+    """Returns a map of every known SKU to its current available quantity.
 
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        dict[str, int]: Current stock levels by SKU
+    Use this before calling `POST /order-intake` to verify stock levels.
     """
 
     return await INVENTORY.get_all_stock()
 
 
-@ROUTER.post("/inventory/confirm", tags=["Inventory"])
+@ROUTER.post(
+    "/inventory/confirm",
+    tags=["Inventory"],
+    summary="Confirm a soft reservation",
+    description="Permanently commits a soft reservation created by `POST /order-intake`. "
+    "Must be called within 3 seconds of the reservation or it will have expired.",
+    response_description="Confirmation result with reservation status",
+    responses={
+        404: {"description": "Reservation not found or already expired"},
+    },
+)
 async def confirm_reservation(
     request: Request, body: ReservationAction, response: Response
 ) -> ReservationResponse:
-    """Confirm a soft reservation after successful payment
+    """Permanently commits a soft reservation created by `POST /order-intake`.
 
-    Args:
-        request (Request): The HTTP request
-        body (ReservationAction): Contains the reservation_id to confirm
-        response (Response): FastAPI response object for setting status code
+    Must be called within 3 seconds or the reservation expires automatically.
 
-    Returns:
-        ReservationResponse: Confirmation result with status
+    - **200** — Reservation confirmed; stock is permanently deducted.
+    - **404** — Reservation not found (invalid ID or already expired/released).
     """
 
     found = await INVENTORY.confirm_reservation(body.reservation_id)
@@ -125,19 +154,28 @@ async def confirm_reservation(
     )
 
 
-@ROUTER.post("/inventory/release", tags=["Inventory"])
+@ROUTER.post(
+    "/inventory/release",
+    tags=["Inventory"],
+    summary="Release a soft reservation",
+    description="Cancels a soft reservation and returns the held stock to available inventory. "
+    "Use this when payment fails or the customer cancels. "
+    "Must be called within 3 seconds or the reservation expires automatically.",
+    response_description="Release result with reservation status",
+    responses={
+        404: {"description": "Reservation not found or already expired"},
+    },
+)
 async def release_reservation(
     request: Request, body: ReservationAction, response: Response
 ) -> ReservationResponse:
-    """Release a soft reservation (payment failed or timed out)
+    """Cancels a soft reservation and returns held stock to available inventory.
 
-    Args:
-        request (Request): The HTTP request
-        body (ReservationAction): Contains the reservation_id to release
-        response (Response): FastAPI response object for setting status code
+    Use this when payment fails or the customer cancels. Must be called within
+    3 seconds or the reservation expires automatically.
 
-    Returns:
-        ReservationResponse: Release result with status
+    - **200** — Reservation released; stock is returned to available inventory.
+    - **404** — Reservation not found (invalid ID or already expired/confirmed).
     """
 
     found = await INVENTORY.release_reservation(body.reservation_id)
@@ -152,16 +190,18 @@ async def release_reservation(
     )
 
 
-@ROUTER.post("/inventory/restock", tags=["Diagnostics"])
+@ROUTER.post(
+    "/inventory/restock",
+    tags=["Diagnostics"],
+    summary="Add stock to a SKU",
+    description="Increases the available quantity for an existing SKU or creates a new SKU entry. "
+    "Returns the previous and updated stock levels. Quantity must be >= 0 (422 otherwise).",
+    response_description="Previous and current stock levels for the SKU",
+)
 async def restock_inventory(request: Request, body: StockUpdate) -> StockResponse:
-    """Add stock to an existing or new SKU
+    """Increases available quantity for a SKU or creates a new SKU entry.
 
-    Args:
-        request (Request): The HTTP request
-        body (StockUpdate): Contains the SKU and quantity to add
-
-    Returns:
-        StockResponse: Before and after stock levels
+    Returns previous and updated stock levels. Quantity must be >= 0 (422 on validation failure).
     """
 
     previous = await INVENTORY.check_stock(body.sku)
@@ -171,34 +211,42 @@ async def restock_inventory(request: Request, body: StockUpdate) -> StockRespons
     )
 
 
-@ROUTER.get("/inventory/{sku}", tags=["Inventory"])
+@ROUTER.get(
+    "/inventory/{sku}",
+    tags=["Inventory"],
+    summary="Look up stock for a single SKU",
+    description="Returns the current available quantity for the given SKU. "
+    "Unknown SKUs return `quantity: 0` rather than an error.",
+    response_description="SKU and its current available quantity",
+)
 async def get_single_sku(request: Request, sku: str) -> StockLevelResponse:
-    """Look up current stock for a single SKU
+    """Returns the current available quantity for the given SKU.
 
-    Args:
-        request (Request): The HTTP request
-        sku (str): The SKU to look up
-
-    Returns:
-        StockLevelResponse: Current quantity for the SKU
+    Always returns 200. Unknown SKUs return `quantity: 0`.
     """
 
     quantity = await INVENTORY.check_stock(sku)
     return StockLevelResponse(sku=sku, quantity=quantity)
 
 
-@ROUTER.post("/notify/order-confirmation", tags=["Notifications"])
+@ROUTER.post(
+    "/notify/order-confirmation",
+    tags=["Notifications"],
+    summary="Send an order confirmation notification",
+    description="Dispatches an order confirmation to the specified recipient via email or SMS. "
+    "The `channel` field must be `\"email\"` or `\"sms\"` — any other value returns 422.",
+    response_description="Notification ID and delivery status",
+    responses={
+        422: {"description": "Invalid channel — must be 'email' or 'sms'"},
+    },
+)
 async def send_order_notification(
     request: Request, body: OrderNotificationRequest
 ) -> NotificationResponse:
-    """Send an order confirmation notification
+    """Dispatches an order confirmation to the specified recipient via email or SMS.
 
-    Args:
-        request (Request): The HTTP request
-        body (OrderNotificationRequest): Notification details
-
-    Returns:
-        NotificationResponse: Result with notification_id and status
+    The `channel` field must be `"email"` or `"sms"`. Any other value returns 422.
+    Use the `reservation_id` from a prior `POST /order-intake` response.
     """
 
     notification_id = await NOTIFIER.send_order_confirmation(
@@ -215,18 +263,25 @@ async def send_order_notification(
     )
 
 
-@ROUTER.post("/notify/shipping-confirmation", tags=["Notifications"])
+@ROUTER.post(
+    "/notify/shipping-confirmation",
+    tags=["Notifications"],
+    summary="Send a shipping confirmation notification",
+    description="Dispatches a shipping confirmation (with tracking number) to the specified "
+    "recipient via email or SMS. The `channel` field must be `\"email\"` or `\"sms\"` — "
+    "any other value returns 422.",
+    response_description="Notification ID and delivery status",
+    responses={
+        422: {"description": "Invalid channel — must be 'email' or 'sms'"},
+    },
+)
 async def send_shipping_notification(
     request: Request, body: ShippingNotificationRequest
 ) -> NotificationResponse:
-    """Send a shipping confirmation notification
+    """Dispatches a shipping confirmation with tracking number via email or SMS.
 
-    Args:
-        request (Request): The HTTP request
-        body (ShippingNotificationRequest): Notification details
-
-    Returns:
-        NotificationResponse: Result with notification_id and status
+    The `channel` field must be `"email"` or `"sms"`. Any other value returns 422.
+    Use the `reservation_id` from a prior `POST /order-intake` response.
     """
 
     notification_id = await NOTIFIER.send_shipping_confirmation(
@@ -243,16 +298,15 @@ async def send_shipping_notification(
     )
 
 
-@ROUTER.get("/notify/log", tags=["Diagnostics"])
+@ROUTER.get(
+    "/notify/log",
+    tags=["Diagnostics"],
+    summary="Get all sent notifications",
+    description="Returns every notification dispatched since the application started, with a total count.",
+    response_description="List of notification records and total count",
+)
 async def get_notification_log(request: Request) -> NotificationLogResponse:
-    """Get all sent notifications (diagnostic endpoint)
-
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        NotificationLogResponse: All notification records with count
-    """
+    """Returns every notification dispatched since the application started."""
 
     notifications = await NOTIFIER.get_notification_log()
     return NotificationLogResponse(
@@ -260,112 +314,103 @@ async def get_notification_log(request: Request) -> NotificationLogResponse:
     )
 
 
-@ROUTER.get("/analytics/summary", tags=["Diagnostics"])
+@ROUTER.get(
+    "/analytics/summary",
+    tags=["Diagnostics"],
+    summary="Aggregate order analytics",
+    description="Returns total order counts, acceptance/rejection breakdowns, and overall acceptance rate.",
+    response_description="Aggregate order counts and acceptance rate",
+)
 async def analytics_summary(request: Request) -> AnalyticsSummaryResponse:
-    """Get aggregate order analytics summary
+    """Returns total order counts, acceptance/rejection breakdowns, and overall acceptance rate."""
 
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        AnalyticsSummaryResponse: Aggregate counts and acceptance rate
-    """
-
-    data = await TRACKER.get_summary()
-    return AnalyticsSummaryResponse(**data)
+    return await TRACKER.get_summary()
 
 
-@ROUTER.get("/analytics/top-skus", tags=["Diagnostics"])
+@ROUTER.get(
+    "/analytics/top-skus",
+    tags=["Diagnostics"],
+    summary="Most-requested SKUs",
+    description="Returns the most-requested SKUs ranked by total requested quantity.",
+    response_description="Ranked list of SKUs with request totals",
+)
 async def analytics_top_skus(
-    request: Request, limit: int = 5
+    request: Request,
+    limit: int = Query(default=5, description="Maximum number of SKUs to return", ge=1),
 ) -> TopSkusResponse:
-    """Get most-requested SKUs ranked by total quantity
-
-    Args:
-        request (Request): The HTTP request
-        limit (int): Maximum number of SKUs to return (default 5)
-
-    Returns:
-        TopSkusResponse: Ranked list of SKUs
-    """
+    """Returns the most-requested SKUs ranked by total requested quantity."""
 
     top = await TRACKER.get_top_skus(limit)
     return TopSkusResponse(top_skus=top, limit=limit)
 
 
-@ROUTER.get("/analytics/trend", tags=["Diagnostics"])
+@ROUTER.get(
+    "/analytics/trend",
+    tags=["Diagnostics"],
+    summary="Hourly order trend",
+    description="Returns order counts bucketed by hour for the specified lookback window.",
+    response_description="Hourly order count buckets",
+)
 async def analytics_trend(
-    request: Request, hours: int = 24
+    request: Request,
+    hours: int = Query(default=24, description="Number of hours to look back", ge=1),
 ) -> HourlyTrendResponse:
-    """Get order counts bucketed by hour
-
-    Args:
-        request (Request): The HTTP request
-        hours (int): Number of hours to look back (default 24)
-
-    Returns:
-        HourlyTrendResponse: Hourly order count buckets
-    """
+    """Returns order counts bucketed by hour for the specified lookback window."""
 
     trend = await TRACKER.get_hourly_trend(hours)
     return HourlyTrendResponse(hours_requested=hours, trend=trend)
 
 
-@ROUTER.get("/analytics/log", tags=["Diagnostics"])
+@ROUTER.get(
+    "/analytics/log",
+    tags=["Diagnostics"],
+    summary="Raw analytics event log",
+    description="Returns every analytics event recorded since the application started, with a total count.",
+    response_description="List of analytics events and total count",
+)
 async def analytics_log(request: Request) -> AnalyticsLogResponse:
-    """Get raw analytics event log (diagnostic endpoint)
-
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        AnalyticsLogResponse: All recorded order events with count
-    """
+    """Returns every analytics event recorded since the application started."""
 
     events = await TRACKER.get_event_log()
     return AnalyticsLogResponse(events=events, count=len(events))
 
 
-@ROUTER.get("/retry-queue/pending", tags=["Diagnostics"])
+@ROUTER.get(
+    "/retry-queue/pending",
+    tags=["Diagnostics"],
+    summary="Pending retry tasks",
+    description="Returns all tasks currently queued for retry (not yet exhausted or succeeded).",
+    response_description="List of pending retry tasks",
+)
 async def retry_queue_pending(request: Request) -> list[RetryTaskResponse]:
-    """Get all pending retry tasks (diagnostic endpoint)
+    """Returns all tasks currently queued for retry."""
 
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        list[RetryTaskResponse]: All pending retry tasks
-    """
-
-    pending = await RETRY_QUEUE.get_pending()
-    return [RetryTaskResponse(**task) for task in pending]
+    return await RETRY_QUEUE.get_pending()
 
 
-@ROUTER.get("/retry-queue/dead-letters", tags=["Diagnostics"])
+@ROUTER.get(
+    "/retry-queue/dead-letters",
+    tags=["Diagnostics"],
+    summary="Dead-letter retry tasks",
+    description="Returns all tasks that have exhausted their retry attempts and been moved to the dead-letter queue.",
+    response_description="List of permanently failed retry tasks",
+)
 async def retry_queue_dead_letters(request: Request) -> list[RetryTaskResponse]:
-    """Get all dead-letter retry tasks (diagnostic endpoint)
+    """Returns all tasks that exhausted retries and moved to the dead-letter queue."""
 
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        list[RetryTaskResponse]: All permanently failed tasks
-    """
-
-    dead_letters = await RETRY_QUEUE.get_dead_letters()
-    return [RetryTaskResponse(**task) for task in dead_letters]
+    return await RETRY_QUEUE.get_dead_letters()
 
 
-@ROUTER.get("/saga/all", tags=["Diagnostics"])
+@ROUTER.get(
+    "/saga/all",
+    tags=["Diagnostics"],
+    summary="All tracked sagas",
+    description="Returns every saga (order lifecycle) tracked since the application started, "
+    "including current status and full transition history.",
+    response_description="List of all sagas with status and history",
+)
 async def get_all_sagas(request: Request) -> SagaListResponse:
-    """Get all tracked sagas (diagnostic endpoint)
-
-    Args:
-        request (Request): The HTTP request
-
-    Returns:
-        SagaListResponse: All sagas with their current status and history
-    """
+    """Returns every saga tracked since the application started, with full transition history."""
 
     sagas = await SAGA_TRACKER.get_all_sagas()
     details = [
@@ -382,19 +427,26 @@ async def get_all_sagas(request: Request) -> SagaListResponse:
     return SagaListResponse(sagas=details, count=len(details))
 
 
-@ROUTER.get("/saga/{reservation_id}", tags=["Orders"])
+@ROUTER.get(
+    "/saga/{reservation_id}",
+    tags=["Orders"],
+    summary="Get saga state for a reservation",
+    description="Returns the current saga state and full transition history for the given "
+    "reservation ID. Use the `reservation_id` returned by `POST /order-intake`.",
+    response_description="Saga details with current status and transition history",
+    responses={
+        404: {"description": "Reservation not found"},
+    },
+)
 async def get_saga(
     request: Request, reservation_id: str, response: Response
 ) -> SagaDetailResponse:
-    """Get the saga state and history for a reservation
+    """Returns the saga state and full transition history for a reservation.
 
-    Args:
-        request (Request): The HTTP request
-        reservation_id (str): The reservation UUID to look up
-        response (Response): FastAPI response object for setting status code
+    Use the `reservation_id` from a prior `POST /order-intake` response.
 
-    Returns:
-        SagaDetailResponse: Saga details with full transition history
+    - **200** — Saga found; returns current status and history.
+    - **404** — No saga exists for the given reservation ID.
     """
 
     saga = await SAGA_TRACKER.get_saga(reservation_id)

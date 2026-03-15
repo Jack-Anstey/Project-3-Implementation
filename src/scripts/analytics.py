@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 
 # Local Imports
+from src.scripts.responses import TopSkuEntry, HourlyTrendEntry, AnalyticsSummaryResponse
 from src.utils.custom_logger import get_logger
 
 # Create the global logger
@@ -22,15 +23,15 @@ class AnalyticsService(ABC):
         """Record an order event for analytics tracking"""
 
     @abstractmethod
-    async def get_summary(self) -> dict:
+    async def get_summary(self) -> AnalyticsSummaryResponse:
         """Return aggregate order counts and acceptance rate"""
 
     @abstractmethod
-    async def get_top_skus(self, limit: int) -> list[dict]:
+    async def get_top_skus(self, limit: int) -> list[TopSkuEntry]:
         """Return most-requested SKUs ranked by total quantity requested"""
 
     @abstractmethod
-    async def get_hourly_trend(self, hours: int) -> list[dict]:
+    async def get_hourly_trend(self, hours: int) -> list[HourlyTrendEntry]:
         """Return order counts bucketed by hour for the last N hours"""
 
     @abstractmethod
@@ -101,7 +102,7 @@ class InMemoryAnalytics(AnalyticsService):
             f"status={status}, {accepted_count} accepted, {rejected_count} rejected"
         )
 
-    async def get_summary(self) -> dict:
+    async def get_summary(self) -> AnalyticsSummaryResponse:
         async with self._lock:
             events = list(self._events)
 
@@ -119,18 +120,18 @@ class InMemoryAnalytics(AnalyticsService):
         )
         total_items_rejected = total_items_requested - total_items_accepted
 
-        return {
-            "total_orders": total,
-            "accepted": accepted,
-            "partial": partial,
-            "rejected": rejected,
-            "acceptance_rate": acceptance_rate,
-            "total_items_requested": total_items_requested,
-            "total_items_accepted": total_items_accepted,
-            "total_items_rejected": total_items_rejected,
-        }
+        return AnalyticsSummaryResponse(
+            total_orders=total,
+            accepted=accepted,
+            partial=partial,
+            rejected=rejected,
+            acceptance_rate=acceptance_rate,
+            total_items_requested=total_items_requested,
+            total_items_accepted=total_items_accepted,
+            total_items_rejected=total_items_rejected,
+        )
 
-    async def get_top_skus(self, limit: int = 5) -> list[dict]:
+    async def get_top_skus(self, limit: int = 5) -> list[TopSkuEntry]:
         async with self._lock:
             events = list(self._events)
 
@@ -140,11 +141,11 @@ class InMemoryAnalytics(AnalyticsService):
                 counter[s["sku"]] += s["quantity_requested"]
 
         return [
-            {"sku": sku, "total_requested": count}
+            TopSkuEntry(sku=sku, total_requested=count)
             for sku, count in counter.most_common(limit)
         ]
 
-    async def get_hourly_trend(self, hours: int = 24) -> list[dict]:
+    async def get_hourly_trend(self, hours: int = 24) -> list[HourlyTrendEntry]:
         async with self._lock:
             events = list(self._events)
 
@@ -158,7 +159,7 @@ class InMemoryAnalytics(AnalyticsService):
                 buckets[hour_key] += 1
 
         return [
-            {"hour": hour, "order_count": count}
+            HourlyTrendEntry(hour=hour, order_count=count)
             for hour, count in sorted(buckets.items())
         ]
 
