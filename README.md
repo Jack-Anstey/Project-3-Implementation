@@ -439,7 +439,7 @@ Key modules by responsibility:
 
 ## Testing
 
-**Unit tests** — 8 test modules covering inventory, event bus, saga, notifications, analytics, idempotency, retry queue, and middleware. Tests must be run from the repository root directory:
+**Unit tests** — 8 test modules covering inventory, event bus, saga, notifications, analytics, idempotency, retry queue, and middleware. All test dependencies (`pytest`, `pytest-asyncio`) are included in `requirements.txt`. Tests must be run from the repository root directory:
 
 ```bash
 # Unix / Mac
