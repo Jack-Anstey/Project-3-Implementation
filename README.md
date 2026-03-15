@@ -431,7 +431,6 @@ Key modules by responsibility:
 │   ├── test_retry_queue.py
 │   └── test_saga.py
 ├── .gitignore
-├── CLAUDE.md
 ├── README.md
 └── requirements.txt
 ```
